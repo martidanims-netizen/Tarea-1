@@ -1,0 +1,134 @@
+#pregunta 3
+
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+import math
+
+#escala: ampliar o reducir
+#tipo_imagen: rgb o escala de grises
+#tipo_interpolación
+
+imagen = cv2.imread(r"C:\Users\marti\.vscode\P3_IMG_2387_crop.tif")
+imagen = cv2.cvtColor(imagen, cv2.COLOR_BGR2RGB)
+
+def reescalado(imagen, escala, tipo_interpolacion):
+    dimensiones=imagen.shape
+    alto,ancho=imagen.shape[:2]
+    nuevo_alto=int(escala*alto)
+    nuevo_ancho=int(escala*ancho)
+
+    if len(dimensiones)==3: #es rgb
+        canales=dimensiones[2]
+        imagen_reescalada=np.zeros((nuevo_alto,nuevo_ancho,canales),dtype=np.uint8)
+    else:
+        imagen_reescalada=np.zeros((nuevo_alto,nuevo_ancho), dtype=np.uint8)
+    
+    if tipo_interpolacion=="vecino_mas_cercano":
+        for i in range(nuevo_alto):
+            for j in range(nuevo_ancho):
+                
+                    x=i/escala
+                    y=j/escala
+
+                    x_piso=math.floor(x)
+                    y_piso=math.floor(y)
+
+                    if (x-x_piso)<0.5:
+                        x_cerca = x_piso
+                    else:
+                        x_cerca= x_piso+1
+
+                    if (y-y_piso)<0.5:
+                        y_cerca = y_piso
+                    else:
+                        y_cerca = y_piso+1
+
+                    x_cerca=min(x_cerca,alto-1)
+                    y_cerca=min(y_cerca,ancho-1)
+
+                    imagen_reescalada[i,j]=imagen[x_cerca,y_cerca]  
+  
+    elif tipo_interpolacion=="bilineal":
+        for i in range(nuevo_alto):
+            for j in range(nuevo_ancho):
+
+                x=i/escala
+                y=j/escala
+
+                x1=math.floor(x)
+                x2=x1+1
+                y1=math.floor(y)
+                y2=y1+1
+
+                x1 = min(x1, alto-1)
+                x2 = min(x2, alto-1)
+                y1 = min(y1, ancho-1)
+                y2 = min(y2, ancho-1)
+
+                f11=imagen[x1,y1].astype(float)
+                f12=imagen[x1,y2].astype(float)
+                f21=imagen[x2,y1].astype(float)
+                f22=imagen[x2,y2].astype(float)
+
+                if (x2-x1)!=0:
+                    restax=(x2-x1)
+                else:
+                    restax=1.0
+                if (y2-y1)!=0:
+                    restay=(y2-y1)
+                else:
+                    restay=1.0
+
+                fy1=f11+((f21-f11)/(restax))*(x-x1)
+                fy2=f12+((f22-f12)/(restax))*(x-x1)
+                fxy=fy1+((fy2-fy1)/(restay))*(y-y1)
+
+                imagen_reescalada[i,j]=np.round(fxy).astype(np.uint8)
+
+    return imagen_reescalada
+
+imagen_reescalada1=reescalado(imagen,escala=0.2,tipo_interpolacion="bilineal")
+imagen_reescalada2=reescalado(imagen,escala=0.6,tipo_interpolacion="bilineal")
+imagen_reescalada3=reescalado(imagen,escala=1.4,tipo_interpolacion="bilineal")
+imagen_reescalada4=reescalado(imagen,escala=1.8,tipo_interpolacion="bilineal")
+
+plt.figure(figsize=(10, 5))
+plt.subplot(1, 5, 1)
+plt.title("Original")
+plt.imshow(imagen)
+plt.title(f"Original\n{imagen.shape[0]}×{imagen.shape[1]}", fontsize=11)
+plt.axis("off")
+
+plt.subplot(1, 5, 2)
+plt.title("Reescalada")
+plt.imshow(imagen_reescalada1)
+plt.title(f"Escala = 0.6\n{imagen_reescalada1.shape[0]}×{imagen_reescalada1.shape[1]}", fontsize=11)
+plt.axis("off")
+
+plt.subplot(1, 5, 3)
+plt.title("Reescalada")
+plt.imshow(imagen_reescalada2)
+plt.title(f"Escala = 0.6\n{imagen_reescalada2.shape[0]}×{imagen_reescalada2.shape[1]}", fontsize=11)
+plt.axis("off")
+
+plt.subplot(1, 5, 4)
+plt.title("Reescalada")
+plt.imshow(imagen_reescalada3)
+plt.title(f"Escala = 1.4\n{imagen_reescalada3.shape[0]}×{imagen_reescalada3.shape[1]}", fontsize=11)
+plt.axis("off")
+
+plt.subplot(1, 5, 5)
+plt.title("Reescalada")
+plt.imshow(imagen_reescalada4)
+plt.title(f"Escala = 1.8\n{imagen_reescalada4.shape[0]}×{imagen_reescalada4.shape[1]}", fontsize=11)
+plt.axis("off")
+
+plt.show()
+
+##---------------------------
+#Para comparar por escala 
+imagen_reescalada1=reescalado(imagen,escala=1.5,tipo_interpolacion="bilineal")
+imagen_reescalada2=reescalado(imagen,escala=0.5,tipo_interpolacion="bilineal")
+        
+
