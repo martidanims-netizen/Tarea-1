@@ -1,0 +1,337 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+# 1. Cargar imagen
+imagen = cv2.imread(r"C:\Users\marti\.vscode\P1_IMG_2402.tif")
+imagen_normalizada=imagen.astype(np.float32) / 255.0
+img_rgb = cv2.cvtColor(imagen_normalizada, cv2.COLOR_BGR2RGB)
+
+def funcionlab(t): #pasa pasar del cie xyz al cielab
+    deltam=6/29
+    return np.where(t>(deltam)**3,t ** (1 / 3),(t/(3*deltam**2))+4/29)
+
+def invfunclab(t):
+    deltam=6/29
+    return np.where(t>(deltam)**3,t ** (3),(t-(4/29))*3*(deltam**2))
+
+def gamma_a_linear(c,gamma):
+    return c**gamma
+
+#crear funcion
+#h_l lista con valores que quiero modificar
+#m_l lista con ganancia correspondiente a cada h_l
+#ganacia asociada m    
+def colorsaturation(imagen, m_l, h_l, modo):
+        
+    r=imagen[:,:,0]
+    g=imagen[:,:,1]
+    b=imagen[:,:,2]
+
+    h_extendido = [h_l[-1] - 360.0] + h_l + [h_l[0] + 360.0]
+    m_extendido = [m_l[-1]]         + m_l + [m_l[0]]
+
+    if modo=="HSV": #a hsv
+
+        cmax=(np.maximum(np.maximum(r,g),b))
+        cmin=(np.minimum(np.minimum(r,g),b))
+        delta=cmax-cmin
+        V=cmax
+    #H
+        H=np.zeros_like(delta)
+
+        mask_r=(cmax==r)*(delta>0)
+        mask_g=(cmax==g)*(delta>0)
+        mask_b=(cmax==b)*(delta>0)
+
+        H[mask_r] = 60.0 * (((g[mask_r] - b[mask_r]) / delta[mask_r]) % 6)
+        H[mask_g] = 60.0 * (((b[mask_g] - r[mask_g]) / delta[mask_g]) + 2)
+        H[mask_b]= 60.0 * (((r[mask_b] - g[mask_b]) / delta[mask_b]) + 4)
+        
+        S = np.where(cmax > 0, delta / (V), 0.0)
+        
+        alto=H.shape[0]
+        ancho=H.shape[1]
+    
+        for fila in range(alto):
+            for col in range(ancho):
+                hpixel=H[fila,col]
+                mpixel=1
+    
+                for i in range(len(h_extendido)-1):
+                #ahora se requiere buscar la lista
+                    h1 = h_extendido[i]
+                    h2 = h_extendido[i+1]
+    
+                    if h1<=hpixel<=h2:
+                        m1=m_extendido[i]
+                        m2=m_extendido[i+1]
+    
+                        resta=h2-h1
+                        if resta!=0:
+                            mpixel=m1+((m2-m1)/(h2-h1))*(hpixel-h1)
+                        else: 
+                            mpixel=m1
+    
+                        break
+    
+                S_nueva = S[fila, col] * mpixel
+                if S_nueva > 1.0:
+                    S_nueva = 1.0
+                S[fila, col] = np.clip(S_nueva,0.0,1.0)
+
+        #La saturación esta definida en [0,1]
+        #Si m>1, S_nueva puede superar 1 y se recorta
+        #Si m<0,  S_nueva sería negativa.
+        #np.clip asegura que esté entre 0 y 1
+
+
+        imgf = np.stack([H, S, V], axis=-1).astype(np.float32)
+        imgf = cv2.cvtColor(imgf, cv2.COLOR_HSV2RGB)
+
+    elif modo=="cielch":
+        #pasar de gamma a lineal
+        
+        r=gamma_a_linear(r,2.2)
+        g=gamma_a_linear(g,2.2)
+        b=gamma_a_linear(b,2.2)
+        
+        v=np.stack([r, g, b], axis=-1)
+        #primero pasar de rgb a cieXYZ
+        matriz=np.array([[0.490,0.310,0.200],[0.177,0.813,0.011],[0.000,0.010,0.990]]) #matriz de calibración
+
+        XYZ=v@matriz.T
+        X=XYZ[...,0]
+        Y=XYZ[...,1]
+        Z=XYZ[...,2]
+        
+        XN=1 
+        YN=1
+        ZN=1
+
+        xr = X / XN
+        yr = Y / YN
+        zr = Z / ZN
+
+        fx=funcionlab(xr)
+        fy=funcionlab(yr)
+        fz=funcionlab(zr)
+
+        L=116*fy-16
+        a=500*(fx-fy)
+        b2=200*(fy-fz)
+
+        #pasar a cielch
+        c=np.sqrt((a**2)+((b2)**2))
+        h=np.degrees(np.arctan2(b2,a))
+        h = np.where(h < 0, h + 360.0, h)
+
+        h_extendido = [h_l[-1] - 360.0] + h_l + [h_l[0] + 360.0]
+        m_extendido = [m_l[-1]]         + m_l + [m_l[0]]
+    
+        h_i_periodico = np.array(h_extendido)
+        m_i_periodico = np.array(m_extendido)
+        
+        alto=h.shape[0]
+        ancho=h.shape[1]
+    
+        for fila in range(alto):
+            for col in range(ancho):
+                hpixel=h[fila,col]
+                mpixel=1
+    
+                for i in range(len(h_extendido)-1):
+                #ahora se requiere buscar la lista
+                    h1 = h_extendido[i]
+                    h2 = h_extendido[i+1]
+    
+                    if h1<=hpixel<=h2:
+                        m1=m_extendido[i]
+                        m2=m_extendido[i+1]
+    
+                        resta=h2-h1
+                        if resta!=0:
+                            mpixel=m1+((m2-m1)/(h2-h1))*(hpixel-h1)
+                        else: 
+                            mpixel=m1
+    
+                        break
+    
+                c_nueva = c[fila, col] * mpixel
+                #Cromaticidad máxima=130
+                #Si m>1 y el color ya está saturado, se puede caer fuera del rango
+                c_nueva = min(c_nueva, 130.0)
+                c[fila, col] = c_nueva
+
+        h=np.radians(h)
+        #volver a cieLAB
+        a=c*np.cos(h)
+        b2=c*np.sin(h)
+        
+        #volver a cieXYZ
+
+        fy=((L+16)/116)
+        fx=(fy+(a/500))
+        fz=(fy-((b2)/200))
+
+        X = invfunclab(fx) * XN
+        Y = invfunclab(fy) * YN
+        Z = invfunclab(fz) * ZN
+
+        imgxyz=np.stack([X, Y, Z], axis=-1)
+            
+        minv=np.linalg.inv(matriz)
+        rgb_final=imgxyz@minv.T
+        rgb_final=np.clip(rgb_final,0.0,1.0) #porque hay valores que se pueden salir de los rangos al transformar
+        #se debe aplicar correción gamma
+        imgf=np.clip(rgb_final**(1.0/2.2),0.0,1.0)
+
+    return imgf
+
+#final2=colorsaturation(img_rgb, [1, 10, 1] ,[30, 60, 90] , "HSV")
+final=colorsaturation(img_rgb, [1, 1, 1] ,[30, 60, 90] , "HSV")
+final3=colorsaturation(img_rgb, [0, 2, 3] ,[30, 60, 200] , "HSV")
+
+plt.figure(figsize=(10, 5))
+plt.subplot(1, 3, 1)
+plt.title("Original HSV")
+plt.imshow(final)
+plt.axis("off")
+plt.subplot(1, 3, 2)
+plt.title("Aumentos y disminuciones HSV")
+plt.imshow(final3)
+plt.axis("off")
+
+plt.show()
+
+##Parte del código que use para gráficar m y para hacer las comparaciones pedidas
+def graficarm(h_l, m_l, nombre, ax, color='blue'):
+    h_grafica = np.linspace(0, 360, 500)
+    m_grafica = np.zeros_like(h_grafica)
+
+    h_extendido = [h_l[-1] - 360.0] + h_l + [h_l[0] + 360.0]
+    m_extendido = [m_l[-1]]         + m_l + [m_l[0]]
+
+    for j in range(len(h_grafica)):
+        hpixel = h_grafica[j]
+        mpixel = 1.0
+        for i in range(len(h_extendido) - 1):
+            h1 = h_extendido[i]
+            h2 = h_extendido[i + 1]
+            if h1 <= hpixel <= h2:
+                m1 = m_extendido[i]
+                m2 = m_extendido[i + 1]
+                resta = h2 - h1
+                if resta != 0:
+                    mpixel = m1 + ((m2 - m1) / (h2 - h1)) * (hpixel - h1)
+                else:
+                    mpixel = m1
+                break
+        m_grafica[j] = mpixel
+
+    ax.plot(h_grafica, m_grafica, label=nombre, linewidth=2, color=color)
+    ax.scatter(h_l, m_l, color='red', zorder=5, s=40)
+
+fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+# A: Amplitud de m 
+# Mismo punto de control (60°) distintas amplitudes
+ax = axes[0, 0]
+graficarm([30, 60, 90], [1, 1.5, 1], "m_max = 1.5 (suave)", ax, 'green')
+graficarm([30, 60, 90], [1, 2.5, 1], "m_max = 2.5 (moderado)", ax, 'blue')
+graficarm([30, 60, 90], [1, 4.0, 1], "m_max = 4.0 (agresivo)", ax, 'red')
+ax.set_title("Amplitud de m")
+ax.set_xlabel("Tono h (grados)")
+ax.set_ylabel("m")
+ax.set_ylim(0, 5)
+ax.grid(alpha=0.3)
+ax.legend()
+
+# B: Posición de puntos de control
+# Amplitud cte (m=2.5), pero en distintos tonos
+ax = axes[0, 1]
+graficarm([0, 30, 60], [1, 2.5, 1], "Centro en 30° (naranja)", ax, 'green')
+graficarm([60, 90, 120], [1, 2.5, 1], "Centro en 90° (amarillo-verde)", ax, 'blue')
+graficarm([180, 210, 240], [1, 2.5, 1], "Centro en 210° (azul)", ax, 'red')
+ax.set_title("Posición de puntos de control")
+ax.set_xlabel("Tono h (grados)")
+ax.set_ylabel("m")
+ax.set_ylim(0, 3)
+ax.grid(alpha=0.3)
+ax.legend()
+
+# C: Separación de puntos de control 
+ax = axes[1, 0]
+graficarm([55, 60, 65], [1, 2.5, 1], "(Δ=5°)", ax, 'green')
+graficarm([30, 60, 90], [1, 2.5, 1], "(Δ=30°)", ax, 'blue')
+graficarm([0, 60, 120], [1, 2.5, 1], "(Δ=60°)", ax, 'red')
+ax.set_title("Separación entre puntos de control")
+ax.set_xlabel("Tono h (grados)")
+ax.set_ylabel("m")
+ax.set_ylim(0, 3)
+ax.grid(alpha=0.3)
+ax.legend()
+
+#  D: Número de puntos de control 
+# Diferente número de puntos en mismo rango
+ax = axes[1, 1]
+# 3 puntos: un solo pico
+graficarm([30, 60, 90], [1, 2.5, 1], "3 puntos", ax, 'green')
+# 5 puntos: dos picos
+graficarm([30, 60, 90, 240, 270], [1, 2.5, 1, 2.0, 1], "5 puntos", ax, 'blue')
+# 7 puntos: 3 picos/valles
+graficarm([30, 60, 90, 180, 240, 270, 330],
+          [1, 2.5, 1, 0.5, 2.0, 1, 1.5], "7 puntos", ax, 'red')
+ax.set_title("Número de puntos de control")
+ax.set_xlabel("Tono h (grados)")
+ax.set_ylabel("m")
+ax.set_ylim(0, 3)
+ax.grid(alpha=0.3)
+ax.legend()
+
+plt.tight_layout()
+plt.show()
+
+##---------------------------------------------------------------------
+##Parte del código que usé para comparar imagenes segun la tonalidad amplificada o atenuada
+#configuración 1
+h_l1=[30,60,240]
+m_l1=[1,2.5,2] #amplifica tonos amarillos
+#configuracion 2
+h_l2=[0,70,240]
+m_l2=[1,0.3,1] #atenua azules
+#configuracion 3
+h_l3=[30,60,90,180,240,300]
+m_l3=[1,2.5,1,1,0.3,1] #amplifica los amarillos y atenúa los azules
+
+# configuración 1: Amplifica tonos amarillos (pico en 60°)
+h_l1 = [30, 60, 240]
+m_l1 = [1, 2.5, 2] 
+
+# configuración 2: Atenúa azules (valle en 240°)
+h_l2 = [0, 240, 300] 
+m_l2 = [1, 0.3, 1] 
+
+#configuración 3: Mixta (amplifica amarillos, atenúa azules)
+h_l3 = [30, 60, 90, 180, 240, 300]
+m_l3 = [1, 2.5, 1, 1, 0.3, 1]
+
+final=colorsaturation(img_rgb2, [1, 2.5, 1] ,[30, 60, 240] , "HSV")
+final2=colorsaturation(img_rgb2,[1, 0.2, 1]  ,[0, 240, 300]  , "HSV")
+final3=colorsaturation(img_rgb2,[1, 2.5, 1, 1, 0.0, 1]  ,[30, 60, 90, 180, 240, 300]  , "HSV")
+
+plt.figure(figsize=(10, 5))
+plt.subplot(1, 3, 1)
+plt.title("Amplificación amarillos HSV")
+plt.imshow(final)
+plt.axis("off")
+plt.subplot(1, 3, 2)
+plt.title("Atenuación azules HSV")
+plt.imshow(final2)
+plt.axis("off")
+plt.subplot(1, 3, 3)
+plt.title("Aumentos y disminuciones HSV")
+plt.imshow(final3)
+plt.axis("off")
+
+plt.show()
